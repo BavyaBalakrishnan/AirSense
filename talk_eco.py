@@ -896,6 +896,139 @@ def widget_lines(w: dict) -> list[str]:
             out.append(f'    Markdown({body!r})')
         return out
 
+    if kind == "image":
+        # Inline image — useful for static maps (e.g. NASA FIRMS bbox PNG),
+        # screenshots, logos. Planner emits {"kind":"image","src":"https://...",
+        # "alt":"...", "caption":"..."}.
+        src = (w.get("src") or "").strip()
+        alt = w.get("alt") or w.get("caption") or "image"
+        caption = w.get("caption") or ""
+        out = ['with Column(gap=2):']
+        title = w.get("title")
+        if title:
+            out.append(f'    H3({title!r})')
+        if not src:
+            out.append('    Muted("(no src specified)")')
+            return out
+        out.append(f'    Image(src={src!r}, alt={alt!r}, '
+                   f'css_class="rounded-lg border border-slate-200 max-w-full")')
+        if caption:
+            out.append(f'    Muted({caption!r})')
+        return out
+
+    if kind == "carousel":
+        # Auto-rotating carousel of items. Each item is a small Card with
+        # heading + body + optional link. Great for "Today's headlines" or
+        # rotating tips. Planner emits
+        # {"kind":"carousel","items":[{"heading":"...","body":"...","link":"https://..."}]}.
+        items = w.get("items") or []
+        out = ['with Column(gap=3):']
+        title = w.get("title")
+        if title:
+            out.append(f'    H3({title!r})')
+        if not items:
+            out.append('    Muted("(no items)")')
+            return out
+        out.append('    with Carousel(autoplay=True, interval=4000, loop=True):')
+        for it in items:
+            heading = str(it.get("heading", "")) or "Item"
+            body = str(it.get("body", ""))
+            link = str(it.get("link", ""))
+            out.append('        with Card(css_class="p-4"):')
+            out.append('            with Column(gap=2):')
+            out.append(f'                H3({heading!r})')
+            if body:
+                out.append(f'                Muted({body!r})')
+            if link:
+                out.append(f'                Link({link!r}, href={link!r}, target="_blank")')
+        return out
+
+    if kind == "scatter":
+        # Scatter plot — perfect for "PM2.5 vs wind speed" or any 2-variable
+        # correlation. Planner emits
+        # {"kind":"scatter","data":[{"x":1,"y":2,"label":"Delhi"}], "x_key":"x", "y_key":"y"}.
+        data = w.get("data", [])
+        x_key = w.get("x_key", "x")
+        y_key = w.get("y_key", "y")
+        out = ['with Column(gap=2):']
+        title = w.get("title", "")
+        if title:
+            out.append(f'    H3({title!r})')
+        out.append(f'    ScatterChart(data={data!r}, '
+                   f'series=[ChartSeries(data_key={y_key!r}, label={y_key!r})], '
+                   f'xAxis={x_key!r}, showLegend=False)')
+        return out
+
+    if kind == "calendar_picker":
+        # Date picker calendar. Planner emits
+        # {"kind":"calendar_picker","title":"Pick a day","name":"d","value":"2026-04-27"}.
+        out = ['with Column(gap=2):']
+        title = w.get("title")
+        if title:
+            out.append(f'    H3({title!r})')
+        name = w.get("name") or "picked_date"
+        value = w.get("value")
+        bits = [f'name={name!r}']
+        if value:
+            bits.append(f'value={value!r}')
+        out.append(f'    Calendar({", ".join(bits)})')
+        return out
+
+    if kind == "combobox" or kind == "select":
+        # Searchable dropdown (Combobox) or simple Select. Planner emits
+        # {"kind":"combobox","title":"Compare against","name":"city",
+        #  "options":["Delhi","Mumbai","Pune"], "value":"Delhi"}.
+        options = w.get("options") or []
+        out = ['with Column(gap=2):']
+        title = w.get("title")
+        if title:
+            out.append(f'    H3({title!r})')
+        if not options:
+            out.append('    Muted("(no options)")')
+            return out
+        name = w.get("name") or "selection"
+        value = w.get("value") or (options[0] if options else "")
+        comp = "Combobox" if kind == "combobox" else "Select"
+        opt = "ComboboxOption" if kind == "combobox" else "SelectOption"
+        out.append(f'    with {comp}(name={name!r}, value={value!r}):')
+        for o in options:
+            o_str = str(o)
+            out.append(f'        {opt}({o_str!r}, value={o_str!r})')
+        return out
+
+    if kind == "blockquote" or kind == "quote":
+        # Rendered as <blockquote>. Use for WHO advisories, expert quotes,
+        # mission statements. Planner emits
+        # {"kind":"blockquote","body":"...","cite":"WHO 2021 guidelines"}.
+        body = str(w.get("body", "")) or ""
+        cite = str(w.get("cite", "")) or ""
+        out = []
+        title = w.get("title")
+        if title:
+            out.append(f'H3({title!r})')
+        if not body:
+            out.append('Muted("(empty quote)")')
+            return out
+        out.append('with BlockQuote():')
+        out.append(f'    Text({body!r})')
+        if cite:
+            out.append(f'    Muted({f"— {cite}"!r})')
+        return out
+
+    if kind == "kbd":
+        # Inline keyboard-shortcut hints. Planner emits
+        # {"kind":"kbd","keys":["R"],"label":"Refresh data"}.
+        keys = w.get("keys") or []
+        if isinstance(keys, str):
+            keys = [keys]
+        label = w.get("label", "")
+        out = ['with Row(gap=2, css_class="items-center"):']
+        for k in keys:
+            out.append(f'    Kbd({str(k)!r})')
+        if label:
+            out.append(f'    Muted({label!r})')
+        return out
+
     return [f'Muted({f"Unknown widget kind: {kind!r}"!r})']
 
 
@@ -907,32 +1040,62 @@ def render_dashboard(title: str, tabs: list[dict]) -> str:
     from datetime import datetime as _dt
     subtitle = (
         f"Live air-quality intelligence · "
-        f"updated {_dt.now().strftime('%b %d, %Y · %H:%M')}"
+        f"updated {_dt.now().strftime('%b %d, %Y · %H:%M:%S')}"
     )
     parts = [
         "from prefab_ui.app import PrefabApp",
         "from prefab_ui.components import (",
         "    Accordion, AccordionItem, Alert, AlertDescription, AlertTitle,",
-        "    Badge, Card, CardContent, CardDescription, CardFooter,",
-        "    CardHeader, CardTitle, Column, DataTable, DataTableColumn,",
-        "    Dot, Grid, GridItem, H1, H2, H3, Icon, Lead, Link, Loader,",
-        "    Markdown, Metric, Muted, Ring, Row, Separator, Tab, Tabs, Text,",
+        "    Badge, BlockQuote, Button, Calendar, Card, CardContent,",
+        "    CardDescription, CardFooter, CardHeader, CardTitle, Carousel,",
+        "    Column, Combobox, ComboboxOption, DataTable, DataTableColumn,",
+        "    Dot, Grid, GridItem, H1, H2, H3, Icon, Image, Kbd, Lead, Link,",
+        "    Loader, Markdown, Metric, Muted, Ring, Row, Select, SelectOption,",
+        "    Separator, Tab, Tabs, Text,",
         ")",
         "from prefab_ui.components.charts import (",
         "    AreaChart, BarChart, ChartSeries, LineChart, PieChart,",
-        "    RadarChart, RadialChart, Sparkline,",
+        "    RadarChart, RadialChart, ScatterChart, Sparkline,",
         ")",
+        # Declarative actions for the in-UI Refresh button. The button POSTs
+        # to a tiny HTTP refresh endpoint (started by talk_eco.py on
+        # http://127.0.0.1:5180/refresh) which re-runs build_city_report on
+        # every tracked city and bumps the generated file's mtime — Prefab's
+        # hot-reload watcher then re-renders the browser automatically.
+        "from prefab_ui.actions import Fetch, ShowToast",
         "",
         # Soft gradient background + wider max-width for a more dashboard-y feel.
         'with PrefabApp(css_class="min-h-screen bg-gradient-to-br '
         'from-sky-50 via-white to-emerald-50 p-6") as app:',
         '    with Column(gap=4, css_class="max-w-7xl mx-auto"):',
         # Hero band above the main card.
-        '        with Row(gap=3, css_class="items-center"):',
-        '            Icon("wind", size="lg")',
-        '            with Column(gap=0):',
-        f"                H1({title!r})",
-        f"                Lead({subtitle!r})",
+        '        with Row(gap=3, css_class="items-center justify-between"):',
+        '            with Row(gap=3, css_class="items-center"):',
+        '                Icon("wind", size="lg")',
+        '                with Column(gap=0):',
+        f"                    H1({title!r})",
+        f"                    Lead({subtitle!r})",
+        # In-UI Refresh button — POSTs to the local refresh endpoint started
+        # by talk_eco.py (see _RefreshHandler / start_refresh_server below).
+        # The server re-runs build_city_report for every tracked city, then
+        # touches generated_eco_app.py so Prefab hot-reloads the browser.
+        # Purely declarative — no Python callable on the click path.
+        '            with Row(gap=2, css_class="items-center"):',
+        '                Kbd("R")',
+        '                Button("Refresh data", icon="refresh-cw",',
+        '                       variant="outline",',
+        '                       on_click=Fetch(',
+        '                           url="http://127.0.0.1:5180/refresh",',
+        '                           method="POST",',
+        '                           onSuccess=ShowToast(',
+        '                               "Refreshing live data…",',
+        '                               description="Re-fetching every tracked city. The dashboard will reload in a moment.",',
+        '                               variant="success", duration=4000),',
+        '                           onError=ShowToast(',
+        '                               "Refresh failed",',
+        '                               description="Is talk_eco.py still running? Check the terminal.",',
+        '                               variant="error", duration=6000),',
+        '                       ))',
         '        with Card(css_class="shadow-lg border-slate-200/70"):',
         "            with CardHeader():",
         f"                CardTitle({title!r})",
@@ -1074,6 +1237,30 @@ Each widget is one of:
   {{"kind": "text",      "heading": "<optional>", "body": "<optional>", "level": "h1|h2|h3|lead"}}
         // body is rendered as Markdown. level="lead" gives a large muted
         // intro paragraph for the top of a tab.
+  {{"kind": "image",     "src": "https://...", "alt": "...", "caption": "<optional>"}}
+        // Inline image. Use for static maps (NASA FIRMS PNG bbox screenshot,
+        // OpenStreetMap tile), org logos, satellite imagery.
+  {{"kind": "carousel",  "title": "<optional>",
+                         "items": [{{"heading": "...", "body": "...", "link": "https://..."}}]}}
+        // Auto-rotating cards. Great for "Today's headlines" — same data as
+        // news_list but more cinematic. 4-second autoplay.
+  {{"kind": "scatter",   "title": "<optional>", "data": [{{"x":1,"y":2}}],
+                         "x_key": "x", "y_key": "y"}}
+        // Scatter plot — perfect for "PM2.5 vs wind speed" correlation,
+        // or "AQI vs temperature" causal hints.
+  {{"kind": "calendar_picker", "title": "<optional>", "name": "d", "value": "2026-04-27"}}
+        // Date-picker calendar. Use when the user asks for "pick a day",
+        // "compare two days", "drill into a specific date".
+  {{"kind": "combobox",  "title": "<optional>", "name": "city",
+                         "options": ["Delhi","Mumbai","Pune"], "value": "Delhi"}}
+        // Searchable dropdown. Use for "Compare against …", "Focus city",
+        // "AQI scale (US EPA / European / NAQI)". Use {{"kind":"select"}}
+        // for the simpler non-searchable variant.
+  {{"kind": "blockquote", "body": "...", "cite": "<optional source>"}}
+        // <blockquote> — use for WHO advisories, expert quotes, mission
+        // statements, anything you'd want to visually pull off the page.
+  {{"kind": "kbd",       "keys": ["R"], "label": "<optional caption>"}}
+        // Render keyboard-shortcut hints inline.
 
 Composition rules:
 - Always start with a high-impact "Overview" tab using the pre-computed
@@ -1098,6 +1285,17 @@ Composition rules:
   the `table` (DataTable) widget — it is sortable + paginated.
 - ALWAYS add a small "Why" / "Insight" `text` widget at the END of each tab
   using the EXACT body provided in `tab_insights` below.
+- For "headlines" / "news" you may use either `news_list` (a vertical list
+  of cards with clickable links — best for ≤ 5 items) or `carousel` (an
+  auto-rotating banner — best for "show me the latest" demos).
+- For static maps, satellite imagery, or any external PNG (e.g. NASA FIRMS
+  bbox map) use `image`. The renderer will lazy-load it and show a caption.
+- For "drill into a specific day" or "compare two dates" use
+  `calendar_picker`. For a "focus city" / "compare against" picker use
+  `combobox` (searchable) or `select` (simple).
+- For pulled-out quotes (WHO advisories, expert opinions) use `blockquote`.
+- Add a `kbd` widget anywhere you want to advertise a keyboard shortcut
+  (e.g. {{"kind":"kbd","keys":["R"],"label":"Refresh data"}}).
 - Pick tab names that fit the user's request (e.g. "Overview", "Pollutants",
   "24h Trend", "7-Day Heatmap", "Compare", "Health", "Background").
 - For "why is X polluted", "WHO limits", "what's the worst pollutant in X" →
@@ -1497,6 +1695,133 @@ class PrefabServer:
 
 
 # ---------------------------------------------------------------------------
+# 4b. In-UI Refresh server — a tiny HTTP endpoint the generated dashboard
+#     POSTs to when the user clicks the "Refresh data" button. Runs in a
+#     background daemon thread so it doesn't block the REPL.
+#
+#     Pattern: Prefab's Fetch action fires from the browser → this handler
+#     re-runs build_city_report for every tracked city in parallel → it
+#     `os.utime`s generated_eco_app.py so Prefab's file-watcher detects a
+#     change and hot-reloads the open browser tab. Zero Python callables on
+#     Prefab's click path (which it does not allow); everything declarative.
+# ---------------------------------------------------------------------------
+
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+REFRESH_PORT = 5180
+
+# Set by main() after each successful plan() so the refresh handler can
+# re-render the dashboard with a fresh `updated …` timestamp + freshly
+# hydrated live widgets (heatmap_7d, who_breach, outdoor_window, news_list,
+# aqicn_compare, pollution_source). Without this the file's mtime bumps
+# but the hero subtitle and any render-time-fetched data stay frozen.
+_LAST_SPEC: dict | None = None
+
+# Set by main() so the refresh handler can bounce `prefab serve` after
+# rewriting generated_eco_app.py. `prefab serve` doesn't reliably hot-reload
+# on a plain mtime bump from another process, so we mirror what the REPL
+# does after every prompt: write file → restart subprocess → browser sees
+# the new app on its next websocket reconnect.
+_PREFAB_SERVER: "PrefabServer | None" = None
+
+
+class _RefreshHandler(BaseHTTPRequestHandler):
+    """Tiny request handler with permissive CORS so the Prefab dev server
+    (5175) can call this server (5180) from the browser."""
+
+    def _cors(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def do_OPTIONS(self) -> None:        # noqa: N802  (BaseHTTPRequestHandler API)
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def do_POST(self) -> None:           # noqa: N802
+        if self.path.rstrip("/") != "/refresh":
+            self.send_response(404)
+            self._cors()
+            self.end_headers()
+            return
+
+        cities: list[str] = []
+        try:
+            cities = [e.get("city") for e in eco._load() if e.get("city")]
+        except Exception as ex:
+            print(f"  [refresh] cannot read eco_log.json: {ex}")
+
+        results: list[str] = []
+        if cities:
+            print(f"  [refresh] re-fetching {len(cities)} city/cities in parallel: "
+                  f"{', '.join(cities)}")
+            # Use a small thread-pool so all cities are re-fetched concurrently
+            # — same speedup the talk_eco REPL gets for its parallel ADD path.
+            with ThreadPoolExecutor(max_workers=min(8, len(cities))) as pool:
+                futures = {pool.submit(eco.build_city_report, c): c for c in cities}
+                for fut in futures:
+                    c = futures[fut]
+                    try:
+                        fut.result(timeout=30)
+                        results.append(f"OK {c}")
+                    except Exception as ex:
+                        results.append(f"FAIL {c}: {ex}")
+                        print(f"    ↳ refresh failed for {c}: {ex}")
+
+        # Re-render the dashboard so the hero "updated …" timestamp advances
+        # AND any render-time-hydrated widgets (heatmap_7d, who_breach,
+        # outdoor_window, news_list, aqicn_compare, pollution_source) pick
+        # up the freshly fetched numbers. Falls back to a plain mtime bump
+        # if no spec has been planned yet.
+        try:
+            if _LAST_SPEC is not None:
+                write_app(_LAST_SPEC)
+            elif GENERATED.exists():
+                os.utime(GENERATED, None)
+        except Exception as ex:
+            print(f"  [refresh] re-render failed ({ex}); falling back to mtime bump")
+            try:
+                os.utime(GENERATED, None)
+            except Exception:
+                pass
+
+        # Bounce `prefab serve` so the browser actually picks up the new
+        # file. Without this the websocket stays connected to the old
+        # process and the page never reloads even though mtime changed.
+        if _PREFAB_SERVER is not None:
+            try:
+                _PREFAB_SERVER.restart()
+                print("  [refresh] prefab serve restarted — reload imminent.")
+            except Exception as ex:
+                print(f"  [refresh] prefab restart failed: {ex}")
+
+        body = json.dumps({"refreshed": cities, "results": results}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+        print(f"  [refresh] done — browser will hot-reload momentarily.")
+
+    # Suppress the noisy default access log; we print our own one-liner.
+    def log_message(self, fmt: str, *args) -> None:    # noqa: D401
+        return
+
+
+def start_refresh_server() -> HTTPServer:
+    """Spawn the refresh HTTP server in a daemon thread on REFRESH_PORT."""
+    httpd = HTTPServer(("127.0.0.1", REFRESH_PORT), _RefreshHandler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True,
+                         name="refresh-server")
+    t.start()
+    return httpd
+
+
+# ---------------------------------------------------------------------------
 # 5. REPL.
 # ---------------------------------------------------------------------------
 
@@ -1533,6 +1858,11 @@ def main() -> None:
     server = PrefabServer()
     print(f"Starting Prefab dev server (logs → {LOG_PATH.name}) …")
     server.start(); time.sleep(1.5)
+    global _PREFAB_SERVER
+    _PREFAB_SERVER = server  # let the refresh handler bounce it
+    refresh_httpd = start_refresh_server()
+    print(f"Refresh endpoint up on http://127.0.0.1:{REFRESH_PORT}/refresh "
+          "(used by the in-UI Refresh button).")
     print("Open http://127.0.0.1:5175 in your browser.\n")
 
     current_spec: dict | None = None
@@ -1542,7 +1872,12 @@ def main() -> None:
                 prompt = input("\nWhat do you want to see? ").strip()
             except (EOFError, KeyboardInterrupt):
                 break
-            if not prompt or prompt.lower() in {"quit", "exit", "q"}:
+            if not prompt:
+                # Empty Enter is a no-op — keep the Prefab server alive so
+                # the in-UI Refresh button (and the open browser tab) keep
+                # working. Use "quit" / "exit" / "q" / Ctrl-D to leave.
+                continue
+            if prompt.lower() in {"quit", "exit", "q"}:
                 break
 
             try:
@@ -1574,12 +1909,19 @@ def main() -> None:
                         server.restart(); time.sleep(1.0)
                 else:
                     current_spec = spec
+                    global _LAST_SPEC
+                    _LAST_SPEC = spec  # so the Refresh button can re-render
                     print("  (browser will reconnect in a moment)")
             except Exception as e:
                 print(f"  error: {e}")
     finally:
         print("\nShutting down Prefab server …")
         server.stop()
+        try:
+            refresh_httpd.shutdown()
+            refresh_httpd.server_close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
