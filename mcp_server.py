@@ -41,7 +41,14 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+from dotenv import load_dotenv
 from fastmcp import FastMCP
+
+# Load .env BEFORE any tool runs. Critical when this file is launched as a
+# stdio MCP subprocess (e.g. by talk_eco.py) — in that case nothing else has
+# run python-dotenv on our behalf, so FIRMS_MAP_KEY / AQICN_TOKEN would be
+# silently missing and tools like fire_hotspots_near / fetch_aqicn would fail.
+load_dotenv(Path(__file__).parent / ".env")
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge, Card, CardContent, CardHeader, CardTitle,
