@@ -4,6 +4,10 @@ A conversational agent that turns plain English into a live, browser-based air-q
 
 **Three layers:** MCP tools fetch real data → Gemini agent decides what to render → Prefab turns Python components into a live web UI. Every number on screen traces back to a real HTTP response saved on disk — zero hallucination.
 
+### What is Prefab?
+
+[Prefab UI](https://prefab.com) is a **Python-as-a-UI-framework** — you write `Card`, `H1`, `BarChart`, `Tabs`, `Ring`, `Badge` as nested `with` blocks (no HTML, no React, no JSX). Prefab runs a tiny dev server, hot-reloads the file on every save, and the browser updates automatically. The LLM never writes frontend code — it emits 30–80 lines of Python and Prefab renders a fully interactive web dashboard. This is what makes the "talk to app" pattern possible: the agent writes a small `.py` file, Prefab serves it, and the user sees a live UI in seconds.
+
 ---
 
 ## 🚀 Quick Start
